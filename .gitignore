@@ -8,3 +8,6 @@ scratch_frames/
 *.zip
 *.jpg
 *.mat
+.venv
+/data
+
