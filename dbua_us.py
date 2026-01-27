@@ -123,16 +123,17 @@ def main(exp_name, loss_name, n_elemnts = None, nt = None):
     path_data = (f"{DATA_DIR}/{exp_name}.ush5")
     with h5py.File(path_data, 'r') as f:
         print("Root keys:", list(f.keys()))
-        iqdata = jnp.array(f['channel_data']['[0]']['channel_data']) # should be tx,rx,nt
+        # iqdata = jnp.array(f['channel_data']['[0]']['channel_data']) # should be tx,rx,nt
         t0 = 0 #??
         fs = float(f["afe/[0]/sampling_rate_IQ"][0])
         fd = float(f["afe/[0]/demod_frequency"]['f_demod'][0,0])
-        elpos = np.array(f["probe/element_positions"]).T
-        activate_elemnts = np.array(f["tx_setup/[0]/active_elements"])
+        elpos_full = np.array(f["probe/element_positions"]).T
+        # activate_elemnts = np.array(f["tx_setup/[0]/active_elements"])
         print("here")
+        
         data = {}
         channel_data_list = []
-        num_streams = 6
+        num_streams = 1 #6
         for i in range(num_streams):
             try:
                 tmp_ch_data = f["hidden_data"]["channel_data"][f"[{i}]"]["channel_data_int16"]
@@ -152,27 +153,39 @@ def main(exp_name, loss_name, n_elemnts = None, nt = None):
     # change iqdata to elment_data. i.e arrange the cd correctly 
 
     element_data_from_CD = channel_to_element(channel_data=data["channel_data"], ch2el=data["channel_element_mapping"])
-    iqdata = element_data_from_CD[0]
+    iqdata_full = element_data_from_CD[0]
     if n_elemnts == None:
         n_elemnts = elpos.shape[1]
         # Remove padding from Rx dim in iqdata
-        ori_rx = iqdata.shape[1]
+        ori_rx = iqdata_full.shape[1]
         remove_rx = (ori_rx - n_elemnts)//2
-        iqdata = iqdata[:,remove_rx:ori_rx-remove_rx,:]
+        iqdata_full = iqdata_full[:,remove_rx:ori_rx-remove_rx,:]
         # Add padding to Tx
-        ori_tx = iqdata.shape[0]
+        ori_tx = iqdata_full.shape[0]
         add_tx = (n_elemnts - ori_tx)//2
-        iqdata = jnp.pad(iqdata, ((add_tx, add_tx), (0, 0), (0, 0)))
+        iqdata_full = jnp.pad(iqdata_full, ((add_tx, add_tx), (0, 0), (0, 0)))
+        elpos = elpos_full
     else:
         # Add padding to Tx
-        keep_tx = (iqdata.shape[0] - n_elemnts)//2
-        keep_rx = (iqdata.shape[1] - n_elemnts)//2
-        iqdata = iqdata[keep_tx:keep_tx+n_elemnts,keep_rx:keep_rx+n_elemnts,:]
-        keep_el = (elpos.shape[1] - n_elemnts)//2
-        elpos = elpos[:, keep_el: keep_el+n_elemnts]
+        keep_tx = (iqdata_full.shape[0] - n_elemnts)//2
+        keep_rx = (iqdata_full.shape[1] - n_elemnts)//2
+        iqdata_full = iqdata_full[keep_tx:keep_tx+n_elemnts,keep_rx:keep_rx+n_elemnts,:]
+        keep_el = (elpos_full.shape[1] - n_elemnts)//2
+        elpos = elpos_full[:, keep_el: keep_el+n_elemnts]
 
     if nt != None:
-        iqdata = iqdata[:,:,:nt]
+        iqdata = iqdata_full[:,:,100:nt+100]
+    else:
+        iqdata = iqdata_full
+
+    del tmp_ch_data
+    del iqdata_full
+    del ch_data
+    del data
+    del channel_data_list
+    del element_data_from_CD
+    del elpos_full
+
     xe, _, ze = jnp.array(elpos)
     wl0 = ASSUMED_C / fd  # wavelength (λ)
 
@@ -254,12 +267,12 @@ def main(exp_name, loss_name, n_elemnts = None, nt = None):
     # find optimal global sound speed for initalization
     print("line225")
     c0 = np.linspace(1340, 1740, 201)
-    dsb = np.array(
-        [sb_loss(cc * jnp.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC))) for cc in tqdm(c0)])
-    dlc = np.array(
-        [lc_loss(cc * jnp.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC))) for cc in tqdm(c0)])
-    dcf = np.array(
-        [cf_loss(cc * jnp.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC))) for cc in tqdm(c0)])
+    # dsb = np.array(
+    #     [sb_loss(cc * jnp.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC))) for cc in tqdm(c0)])
+    # dlc = np.array(
+    #     [lc_loss(cc * jnp.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC))) for cc in tqdm(c0)])
+    # dcf = np.array(
+    #     [cf_loss(cc * jnp.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC))) for cc in tqdm(c0)])
     dpe = np.array(
         [pe_loss(cc * jnp.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC))) for cc in tqdm(c0)])
     # Use the sound speed with the optimal phase error to initialize sound speed map
@@ -268,7 +281,7 @@ def main(exp_name, loss_name, n_elemnts = None, nt = None):
 
     # Plot global sound speed error
     print("line239")
-    plot_errors_vs_sound_speeds(c0, dsb, dlc, dcf, dpe, exp_name)
+    # plot_errors_vs_sound_speeds(c0, dsb, dlc, dcf, dpe, exp_name)
 
     # Create the optimizer
     opt = OptaxSolver(opt=optax.amsgrad(LEARNING_RATE),
@@ -372,5 +385,5 @@ def main(exp_name, loss_name, n_elemnts = None, nt = None):
 
 if __name__ == "__main__":
     exp_name = '0003490e_20250611'
-    main(exp_name, LOSS, n_elemnts=18, nt=50) # n_elemnts>NXP (or NZP) = 17 for pe 
+    main(exp_name, LOSS, n_elemnts=30, nt=400) # n_elemnts>NXP (or NZP) = 17 for pe 
 
