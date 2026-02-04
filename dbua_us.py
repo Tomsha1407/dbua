@@ -115,7 +115,7 @@ def plot_errors_vs_sound_speeds(c0, dsb, dlc, dcf, dpe, sample):
 
 import h5py
 import os
-def main(exp_name, loss_name, n_elemnts = None, nt = None):
+def main(exp_name, loss_name, n_elemnts = None, nt = None, name=None):
     
     # Get IQ data, time zeros, sampling and demodulation frequency, and element positions
 
@@ -124,11 +124,14 @@ def main(exp_name, loss_name, n_elemnts = None, nt = None):
     with h5py.File(path_data, 'r') as f:
         print("Root keys:", list(f.keys()))
         # iqdata = jnp.array(f['channel_data']['[0]']['channel_data']) # should be tx,rx,nt
-        t0 = 0 #??
+        t0 = 0 #-17.7292 #0 #??
         fs = float(f["afe/[0]/sampling_rate_IQ"][0])
         fd = float(f["afe/[0]/demod_frequency"]['f_demod'][0,0])
-        elpos_full = np.array(f["probe/element_positions"]).T
-        # activate_elemnts = np.array(f["tx_setup/[0]/active_elements"])
+        # Load separate element position arrays for TX and RX
+        elpos_tx = np.array(f["tx_setup/[0]/origin"]).T  # Shape: (3, 204) - effective TX sources
+        elpos_rx = np.array(f["probe/element_positions"]).T  # Shape: (3, 238) - RX elements
+        print(f"TX element positions shape: {elpos_tx.shape}")
+        print(f"RX element positions shape: {elpos_rx.shape}")
         print("here")
         
         data = {}
@@ -154,24 +157,46 @@ def main(exp_name, loss_name, n_elemnts = None, nt = None):
 
     element_data_from_CD = channel_to_element(channel_data=data["channel_data"], ch2el=data["channel_element_mapping"])
     iqdata_full = element_data_from_CD[0]
+    
+    # Handle asymmetric TX and RX dimensions independently
+    n_tx_available = iqdata_full.shape[0]  # Available TX channels
+    n_rx_available = iqdata_full.shape[1]  # Available RX channels
+    
     if n_elemnts == None:
-        n_elemnts = elpos.shape[1]
-        # Remove padding from Rx dim in iqdata
-        ori_rx = iqdata_full.shape[1]
-        remove_rx = (ori_rx - n_elemnts)//2
-        iqdata_full = iqdata_full[:,remove_rx:ori_rx-remove_rx,:]
-        # Add padding to Tx
-        ori_tx = iqdata_full.shape[0]
-        add_tx = (n_elemnts - ori_tx)//2
-        iqdata_full = jnp.pad(iqdata_full, ((add_tx, add_tx), (0, 0), (0, 0)))
-        elpos = elpos_full
+        # Use all available TX and RX elements as-is (asymmetric: 204 TX, 238 RX)
+        n_tx = elpos_tx.shape[1]  # 204 TX elements
+        n_rx = elpos_rx.shape[1]  # 238 RX elements
+        
+        # Crop RX if necessary (remove padding symmetrically from center)
+        if n_rx_available > n_rx:
+            remove_rx = (n_rx_available - n_rx) // 2
+            iqdata_full = iqdata_full[:, remove_rx:n_rx_available-remove_rx, :]
+        
+        # Pad TX if necessary (add padding symmetrically)
+        if n_tx_available < n_tx:
+            add_tx = (n_tx - n_tx_available) // 2
+            iqdata_full = jnp.pad(iqdata_full, ((add_tx, add_tx), (0, 0), (0, 0)))
+        elif n_tx_available > n_tx:
+            # Crop TX if we have more than needed (remove padding symmetrically from center)
+            remove_tx = (n_tx_available - n_tx) // 2
+            iqdata_full = iqdata_full[remove_tx:n_tx_available-remove_tx, :, :]
+        
+        elpos_tx_use = elpos_tx
+        elpos_rx_use = elpos_rx
     else:
-        # Add padding to Tx
-        keep_tx = (iqdata_full.shape[0] - n_elemnts)//2
-        keep_rx = (iqdata_full.shape[1] - n_elemnts)//2
-        iqdata_full = iqdata_full[keep_tx:keep_tx+n_elemnts,keep_rx:keep_rx+n_elemnts,:]
-        keep_el = (elpos_full.shape[1] - n_elemnts)//2
-        elpos = elpos_full[:, keep_el: keep_el+n_elemnts]
+        # Use specified n_elemnts (crops both dimensions to this size from center)
+        n_tx = n_elemnts
+        n_rx = n_elemnts
+        
+        keep_tx = (n_tx_available - n_elemnts) // 2
+        keep_rx = (n_rx_available - n_elemnts) // 2
+        iqdata_full = iqdata_full[keep_tx:keep_tx+n_elemnts, keep_rx:keep_rx+n_elemnts, :]
+        
+        # Crop element positions symmetrically
+        keep_tx_el = (elpos_tx.shape[1] - n_elemnts) // 2
+        keep_rx_el = (elpos_rx.shape[1] - n_elemnts) // 2
+        elpos_tx_use = elpos_tx[:, keep_tx_el:keep_tx_el+n_elemnts]
+        elpos_rx_use = elpos_rx[:, keep_rx_el:keep_rx_el+n_elemnts]
 
     if nt != None:
         iqdata = iqdata_full[:,:,100:nt+100]
@@ -184,9 +209,10 @@ def main(exp_name, loss_name, n_elemnts = None, nt = None):
     del data
     del channel_data_list
     del element_data_from_CD
-    del elpos_full
 
-    xe, _, ze = jnp.array(elpos)
+    # Extract TX and RX coordinates separately
+    xe_tx, _, ze_tx = jnp.array(elpos_tx_use)
+    xe_rx, _, ze_rx = jnp.array(elpos_rx_use)
     wl0 = ASSUMED_C / fd  # wavelength (λ)
 
     # B-mode image dimensions
@@ -211,28 +237,45 @@ def main(exp_name, loss_name, n_elemnts = None, nt = None):
         np.linspace(PHASE_ERROR_Z_MIN, PHASE_ERROR_Z_MAX, NZP),
         indexing="ij")
 
-    # Explicit broadcasting. Dimensions will be [elements, pixels, patches]
-    xe = jnp.reshape(xe, (-1, 1, 1))
-    ze = jnp.reshape(ze, (-1, 1, 1))
+    # Explicit broadcasting for TX. Dimensions will be [tx_elements, pixels, patches]
+    xe_tx_bc = jnp.reshape(xe_tx, (-1, 1, 1))
+    ze_tx_bc = jnp.reshape(ze_tx, (-1, 1, 1))
+    
+    # Explicit broadcasting for RX. Dimensions will be [rx_elements, pixels, patches]
+    xe_rx_bc = jnp.reshape(xe_rx, (-1, 1, 1))
+    ze_rx_bc = jnp.reshape(ze_rx, (-1, 1, 1))
+    
     xp = jnp.reshape(xpc, (1, -1, 1)) + jnp.reshape(xk, (1, 1, -1))
     zp = jnp.reshape(zpc, (1, -1, 1)) + jnp.reshape(zk, (1, 1, -1))
     xp = xp + 0 * zp  # Manual broadcasting
     zp = zp + 0 * xp  # Manual broadcasting
 
-    # Compute time-of-flight for each {image, patch} pixel to each element
-    def tof_image(c): return time_of_flight(
-        xe, ze, xi, zi, xc, zc, c, fnum=0.5, npts=64)
+    # Compute time-of-flight for each {image, patch} pixel to each TX and RX element
+    # Time-of-flight from TX elements to image/patch pixels
+    def tof_image_tx(c): return time_of_flight(
+        xe_tx_bc, ze_tx_bc, xi, zi, xc, zc, c, fnum=0.5, npts=64)
+    
+    # Time-of-flight from RX elements to image/patch pixels (same as TX for reciprocity)
+    def tof_image_rx(c): return time_of_flight(
+        xe_rx_bc, ze_rx_bc, xi, zi, xc, zc, c, fnum=0.5, npts=64)
 
-    def tof_patch(c): return time_of_flight(
-        xe, ze, xp, zp, xc, zc, c, fnum=0.5, npts=64)
+    # Time-of-flight from TX elements to patch pixels
+    def tof_patch_tx(c): return time_of_flight(
+        xe_tx_bc, ze_tx_bc, xp, zp, xc, zc, c, fnum=0.5, npts=64)
+    
+    # Time-of-flight from RX elements to patch pixels
+    def tof_patch_rx(c): return time_of_flight(
+        xe_rx_bc, ze_rx_bc, xp, zp, xc, zc, c, fnum=0.5, npts=64)
 
     def makeImage(c):
-        t = tof_image(c)
-        return jnp.abs(das(iqdata, t - t0, t, fs, fd))
+        t_tx = tof_image_tx(c)
+        t_rx = tof_image_rx(c)
+        return jnp.abs(das(iqdata, t_tx - t0, t_rx, fs, fd))
 
     def loss_wrapper(func, c):
-        t = tof_patch(c)
-        return (func)(iqdata, t - t0, t, fs, fd)
+        t_tx = tof_patch_tx(c)
+        t_rx = tof_patch_rx(c)
+        return (func)(iqdata, t_tx - t0, t_rx, fs, fd)
 
     # Define loss functions
     sb_loss = jit(lambda c: 1 - loss_wrapper(speckle_brightness, c))
@@ -241,8 +284,9 @@ def main(exp_name, loss_name, n_elemnts = None, nt = None):
 
     @jit
     def pe_loss(c):
-        t = tof_patch(c)
-        dphi = phase_error(iqdata, t - t0, t, fs, fd)
+        t_tx = tof_patch_tx(c)
+        t_rx = tof_patch_rx(c)
+        dphi = phase_error(iqdata, t_tx - t0, t_rx, fs, fd)
         valid = dphi != 0
         dphi = jnp.where(valid, jnp.where(valid, dphi, jnp.nan), jnp.nan)
         return jnp.nanmean(jnp.log1p(jnp.square(100 * dphi)))
@@ -267,12 +311,12 @@ def main(exp_name, loss_name, n_elemnts = None, nt = None):
     # find optimal global sound speed for initalization
     print("line225")
     c0 = np.linspace(1340, 1740, 201)
-    # dsb = np.array(
-    #     [sb_loss(cc * jnp.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC))) for cc in tqdm(c0)])
-    # dlc = np.array(
-    #     [lc_loss(cc * jnp.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC))) for cc in tqdm(c0)])
-    # dcf = np.array(
-    #     [cf_loss(cc * jnp.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC))) for cc in tqdm(c0)])
+    dsb = np.array(
+        [sb_loss(cc * jnp.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC))) for cc in tqdm(c0)])
+    dlc = np.array(
+        [lc_loss(cc * jnp.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC))) for cc in tqdm(c0)])
+    dcf = np.array(
+        [cf_loss(cc * jnp.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC))) for cc in tqdm(c0)])
     dpe = np.array(
         [pe_loss(cc * jnp.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC))) for cc in tqdm(c0)])
     # Use the sound speed with the optimal phase error to initialize sound speed map
@@ -281,7 +325,7 @@ def main(exp_name, loss_name, n_elemnts = None, nt = None):
 
     # Plot global sound speed error
     print("line239")
-    # plot_errors_vs_sound_speeds(c0, dsb, dlc, dcf, dpe, exp_name)
+    plot_errors_vs_sound_speeds(c0, dsb, dlc, dcf, dpe, exp_name)
 
     # Create the optimizer
     opt = OptaxSolver(opt=optax.amsgrad(LEARNING_RATE),
@@ -291,7 +335,7 @@ def main(exp_name, loss_name, n_elemnts = None, nt = None):
     # Create the figure writer
     fig, _ = plt.subplots(1, 2, figsize=[9, 4])
     vobj = FFMpegWriter(fps=30)
-    vobj.setup(fig, "videos/%s_opt%s.mp4" % (exp_name, loss_name), dpi=144)
+    vobj.setup(fig, "videos/%s_opt%s.mp4" % (exp_name+name, loss_name), dpi=144)
 
     # Create the image axes for plotting
     ximm = xi[:, 0] * 1e3
@@ -368,7 +412,7 @@ def main(exp_name, loss_name, n_elemnts = None, nt = None):
                 hct.set_text("Iteration %d: Mean value %.2f" %
                              (i, np.mean(cimg)))
 
-        plt.savefig(f"scratch/{exp_name}.png")
+        plt.savefig(f"scratch/{exp_name+name}.png")
 
     # Initialize figure
     handles = makeFigure(c, 0)
@@ -385,5 +429,6 @@ def main(exp_name, loss_name, n_elemnts = None, nt = None):
 
 if __name__ == "__main__":
     exp_name = '0003490e_20250611'
-    main(exp_name, LOSS, n_elemnts=30, nt=400) # n_elemnts>NXP (or NZP) = 17 for pe 
+    # main(exp_name, LOSS, n_elemnts=30, nt=800, name="origin") # n_elemnts>NXP (or NZP) = 17 for pe 
+    main(exp_name='0003490e_20250611', loss_name='pe', n_elemnts=30, nt=800, name="symmetric")
 
