@@ -123,15 +123,12 @@ def main(exp_name, loss_name, n_elemnts = None, nt = None, name=None):
     path_data = (f"{DATA_DIR}/{exp_name}.ush5")
     with h5py.File(path_data, 'r') as f:
         print("Root keys:", list(f.keys()))
-        # iqdata = jnp.array(f['channel_data']['[0]']['channel_data']) # should be tx,rx,nt
-        t0 = 0 #-17.7292 #0 #??
         fs = float(f["afe/[0]/sampling_rate_IQ"][0])
         fd = float(f["afe/[0]/demod_frequency"]['f_demod'][0,0])
-        # Load separate element position arrays for TX and RX
-        elpos_tx = np.array(f["tx_setup/[0]/origin"]).T  # Shape: (3, 204) - effective TX sources
-        elpos_rx = np.array(f["probe/element_positions"]).T  # Shape: (3, 238) - RX elements
-        print(f"TX element positions shape: {elpos_tx.shape}")
-        print(f"RX element positions shape: {elpos_rx.shape}")
+        t0 = (np.array(f['channel_data']['[0]']['first_patient_sample'])[0]/fs) 
+        tx_origin = np.array(f["tx_setup/[0]/origin"]).T  # Shape: (3, 204) - effective TX sources
+        # elemnt_position = np.array(f["probe/element_positions"]).T  # Shape: (3, 238) - RX elements
+        rx_origin = np.array(f["rx_geometry/[0]/origin"]).T #(3, 816)
         print("here")
         
         data = {}
@@ -151,12 +148,10 @@ def main(exp_name, loss_name, n_elemnts = None, nt = None, name=None):
         data["channel_element_mapping"] = np.stack([
             np.array(f["channel_data"][f"[{i}]"]["channel_element_map"]) for i in range(num_streams)
         ], axis=0)
-        print("here")
-    # iqdata, t0, fs, fd, elpos, _, _ = load_dataset(sample)
     # change iqdata to elment_data. i.e arrange the cd correctly 
 
     element_data_from_CD = channel_to_element(channel_data=data["channel_data"], ch2el=data["channel_element_mapping"])
-    iqdata_full = element_data_from_CD[0]
+    iqdata_full = element_data_from_CD[0] #(204,238,1104)
     
     # Handle asymmetric TX and RX dimensions independently
     n_tx_available = iqdata_full.shape[0]  # Available TX channels
@@ -164,8 +159,8 @@ def main(exp_name, loss_name, n_elemnts = None, nt = None, name=None):
     
     if n_elemnts == None:
         # Use all available TX and RX elements as-is (asymmetric: 204 TX, 238 RX)
-        n_tx = elpos_tx.shape[1]  # 204 TX elements
-        n_rx = elpos_rx.shape[1]  # 238 RX elements
+        n_tx = tx_origin.shape[1]  # 204 TX elements
+        n_rx = rx_origin.shape[1]  # 238 RX elements
         
         # Crop RX if necessary (remove padding symmetrically from center)
         if n_rx_available > n_rx:
@@ -181,8 +176,8 @@ def main(exp_name, loss_name, n_elemnts = None, nt = None, name=None):
             remove_tx = (n_tx_available - n_tx) // 2
             iqdata_full = iqdata_full[remove_tx:n_tx_available-remove_tx, :, :]
         
-        elpos_tx_use = elpos_tx
-        elpos_rx_use = elpos_rx
+        # elpos_tx_use = elpos_tx
+        # elpos_rx_use = elpos_rx
     else:
         # Use specified n_elemnts (crops both dimensions to this size from center)
         n_tx = n_elemnts
@@ -193,10 +188,10 @@ def main(exp_name, loss_name, n_elemnts = None, nt = None, name=None):
         iqdata_full = iqdata_full[keep_tx:keep_tx+n_elemnts, keep_rx:keep_rx+n_elemnts, :]
         
         # Crop element positions symmetrically
-        keep_tx_el = (elpos_tx.shape[1] - n_elemnts) // 2
-        keep_rx_el = (elpos_rx.shape[1] - n_elemnts) // 2
-        elpos_tx_use = elpos_tx[:, keep_tx_el:keep_tx_el+n_elemnts]
-        elpos_rx_use = elpos_rx[:, keep_rx_el:keep_rx_el+n_elemnts]
+        keep_tx_el = (tx_origin.shape[1] - n_elemnts) // 2
+        keep_rx_el = (rx_origin.shape[1] - n_elemnts) // 2
+        # elpos_tx_use = elpos_tx[:, keep_tx_el:keep_tx_el+n_elemnts]
+        # elpos_rx_use = elpos_rx[:, keep_rx_el:keep_rx_el+n_elemnts]
 
     if nt != None:
         iqdata = iqdata_full[:,:,100:nt+100]
@@ -430,5 +425,5 @@ def main(exp_name, loss_name, n_elemnts = None, nt = None, name=None):
 if __name__ == "__main__":
     exp_name = '0003490e_20250611'
     # main(exp_name, LOSS, n_elemnts=30, nt=800, name="origin") # n_elemnts>NXP (or NZP) = 17 for pe 
-    main(exp_name='0003490e_20250611', loss_name='pe', n_elemnts=30, nt=800, name="symmetric")
+    main(exp_name='0003490e_20250611', loss_name='pe', n_elemnts=30, nt=800, name="fixt0")
 

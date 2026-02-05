@@ -155,7 +155,7 @@ def main(sample, loss_name):
     # Sound speed grid dimensions
     xc = jnp.linspace(SOUND_SPEED_X_MIN, SOUND_SPEED_X_MAX, SOUND_SPEED_NXC)
     zc = jnp.linspace(SOUND_SPEED_Z_MIN, SOUND_SPEED_Z_MAX, SOUND_SPEED_NZC)
-    dxc, dzc = xc[1] - xc[0], zc[1] - zc[0]
+    dxc, dzc = xc[1] - xc[0], zc[1] - zc[0] ##dx used for total variatoin
 
     # Kernels to use for loss calculations (2λ x 2λ patches)
     xk, zk = np.meshgrid((jnp.arange(NXK) - (NXK - 1) / 2) * wl0 / 2,
