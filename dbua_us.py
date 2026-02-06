@@ -72,8 +72,11 @@ def channel_to_element(channel_data: np.ndarray, ch2el: np.ndarray) -> np.ndarra
     s_valid, shot_valid, el_valid = np.where(ch2el >= 0)
     new_el_idx = ch2el[s_valid, shot_valid, el_valid].astype(int)
     
+    #original
     # element_data[s_valid, :, shot_valid, new_el_idx, :] = channel_data[s_valid, :, shot_valid, el_valid, :]
-    element_data[s_valid, shot_valid, new_el_idx, :] = channel_data[s_valid, shot_valid, el_valid, :]
+    element_data[:, shot_valid, new_el_idx, :] = channel_data[:, shot_valid, el_valid, :] # i took only 1 stream out of 6.
+    #prev
+    # element_data[s_valid, shot_valid, new_el_idx, :] = channel_data[s_valid, shot_valid, el_valid, :]
     return element_data
 
 def imagesc(xc, y, img, dr, **kwargs):
@@ -115,7 +118,7 @@ def plot_errors_vs_sound_speeds(c0, dsb, dlc, dcf, dpe, sample):
 
 import h5py
 import os
-def main(exp_name, loss_name, n_elemnts = None, nt = None, name=None):
+def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None):
     
     # Get IQ data, time zeros, sampling and demodulation frequency, and element positions
 
@@ -127,7 +130,7 @@ def main(exp_name, loss_name, n_elemnts = None, nt = None, name=None):
         fd = float(f["afe/[0]/demod_frequency"]['f_demod'][0,0])
         t0 = (np.array(f['channel_data']['[0]']['first_patient_sample'])[0]/fs) 
         tx_origin = np.array(f["tx_setup/[0]/origin"]).T  # Shape: (3, 204) - effective TX sources
-        # elemnt_position = np.array(f["probe/element_positions"]).T  # Shape: (3, 238) - RX elements
+        elemnt_position = np.array(f["probe/element_positions"]).T  # Shape: (3, 238) - RX elements
         rx_origin = np.array(f["rx_geometry/[0]/origin"]).T #(3, 816)
         print("here")
         
@@ -153,50 +156,20 @@ def main(exp_name, loss_name, n_elemnts = None, nt = None, name=None):
     element_data_from_CD = channel_to_element(channel_data=data["channel_data"], ch2el=data["channel_element_mapping"])
     iqdata_full = element_data_from_CD[0] #(204,238,1104)
     
-    # Handle asymmetric TX and RX dimensions independently
-    n_tx_available = iqdata_full.shape[0]  # Available TX channels
-    n_rx_available = iqdata_full.shape[1]  # Available RX channels
-    
-    if n_elemnts == None:
-        # Use all available TX and RX elements as-is (asymmetric: 204 TX, 238 RX)
-        n_tx = tx_origin.shape[1]  # 204 TX elements
-        n_rx = rx_origin.shape[1]  # 238 RX elements
-        
-        # Crop RX if necessary (remove padding symmetrically from center)
-        if n_rx_available > n_rx:
-            remove_rx = (n_rx_available - n_rx) // 2
-            iqdata_full = iqdata_full[:, remove_rx:n_rx_available-remove_rx, :]
-        
-        # Pad TX if necessary (add padding symmetrically)
-        if n_tx_available < n_tx:
-            add_tx = (n_tx - n_tx_available) // 2
-            iqdata_full = jnp.pad(iqdata_full, ((add_tx, add_tx), (0, 0), (0, 0)))
-        elif n_tx_available > n_tx:
-            # Crop TX if we have more than needed (remove padding symmetrically from center)
-            remove_tx = (n_tx_available - n_tx) // 2
-            iqdata_full = iqdata_full[remove_tx:n_tx_available-remove_tx, :, :]
-        
-        # elpos_tx_use = elpos_tx
-        # elpos_rx_use = elpos_rx
-    else:
-        # Use specified n_elemnts (crops both dimensions to this size from center)
-        n_tx = n_elemnts
-        n_rx = n_elemnts
-        
-        keep_tx = (n_tx_available - n_elemnts) // 2
-        keep_rx = (n_rx_available - n_elemnts) // 2
-        iqdata_full = iqdata_full[keep_tx:keep_tx+n_elemnts, keep_rx:keep_rx+n_elemnts, :]
-        
-        # Crop element positions symmetrically
-        keep_tx_el = (tx_origin.shape[1] - n_elemnts) // 2
-        keep_rx_el = (rx_origin.shape[1] - n_elemnts) // 2
-        # elpos_tx_use = elpos_tx[:, keep_tx_el:keep_tx_el+n_elemnts]
-        # elpos_rx_use = elpos_rx[:, keep_rx_el:keep_rx_el+n_elemnts]
+    # Remove rx padding symmetrically from center:
+    num_elemnts = elemnt_position.shape[1]
+    remove_rx = (iqdata_full.shape[1] - num_elemnts) // 2
+    iqdata = iqdata_full[:, remove_rx:iqdata_full.shape[1]-remove_rx, :]
+
+    if ntx != None:
+        keep_tx = (iqdata.shape[0] - ntx) //2    
+        iqdata = iqdata[keep_tx:keep_tx+ntx, :, :]
+    if nrx != None:
+        keep_rx = (iqdata.shape[1] - nrx) //2    
+        iqdata = iqdata[:, keep_rx:keep_rx+nrx, :]
 
     if nt != None:
-        iqdata = iqdata_full[:,:,100:nt+100]
-    else:
-        iqdata = iqdata_full
+        iqdata = iqdata[:,:,:nt]
 
     del tmp_ch_data
     del iqdata_full
@@ -205,9 +178,7 @@ def main(exp_name, loss_name, n_elemnts = None, nt = None, name=None):
     del channel_data_list
     del element_data_from_CD
 
-    # Extract TX and RX coordinates separately
-    xe_tx, _, ze_tx = jnp.array(elpos_tx_use)
-    xe_rx, _, ze_rx = jnp.array(elpos_rx_use)
+    xe, _, ze = jnp.array(elemnt_position)
     wl0 = ASSUMED_C / fd  # wavelength (λ)
 
     # B-mode image dimensions
@@ -425,5 +396,5 @@ def main(exp_name, loss_name, n_elemnts = None, nt = None, name=None):
 if __name__ == "__main__":
     exp_name = '0003490e_20250611'
     # main(exp_name, LOSS, n_elemnts=30, nt=800, name="origin") # n_elemnts>NXP (or NZP) = 17 for pe 
-    main(exp_name='0003490e_20250611', loss_name='pe', n_elemnts=30, nt=800, name="fixt0")
+    main(exp_name='0003490e_20250611', loss_name='pe', ntx=30, nrx=40, nt=800, name="debug")
 

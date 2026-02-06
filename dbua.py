@@ -143,7 +143,8 @@ def main(sample, loss_name):
 
     # Get IQ data, time zeros, sampling and demodulation frequency, and element positions
     iqdata, t0, fs, fd, elpos, _, _ = load_dataset(sample)
-    xe, _, ze = jnp.array(elpos)
+    # iqdata shape (128,128,925), elops shape (3,128)
+    xe, _, ze = jnp.array(elpos) 
     wl0 = ASSUMED_C / fd  # wavelength (λ)
 
     # B-mode image dimensions
