@@ -164,6 +164,7 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None):
     if ntx != None:
         keep_tx = (iqdata.shape[0] - ntx) //2    
         iqdata = iqdata[keep_tx:keep_tx+ntx, :, :]
+        tx_origin = tx_origin[:,keep_tx:keep_tx+ntx]
     if nrx != None:
         keep_rx = (iqdata.shape[1] - nrx) //2    
         iqdata = iqdata[:, keep_rx:keep_rx+nrx, :]
@@ -178,7 +179,8 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None):
     del channel_data_list
     del element_data_from_CD
 
-    xe, _, ze = jnp.array(elemnt_position)
+    # xe, _, ze = jnp.array(elemnt_position)
+    xe, _, ze = jnp.array(tx_origin)
     wl0 = ASSUMED_C / fd  # wavelength (λ)
 
     # B-mode image dimensions
@@ -202,36 +204,31 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None):
         np.linspace(PHASE_ERROR_X_MIN, PHASE_ERROR_X_MAX, NXP),
         np.linspace(PHASE_ERROR_Z_MIN, PHASE_ERROR_Z_MAX, NZP),
         indexing="ij")
-
-    # Explicit broadcasting for TX. Dimensions will be [tx_elements, pixels, patches]
-    xe_tx_bc = jnp.reshape(xe_tx, (-1, 1, 1))
-    ze_tx_bc = jnp.reshape(ze_tx, (-1, 1, 1))
     
-    # Explicit broadcasting for RX. Dimensions will be [rx_elements, pixels, patches]
-    xe_rx_bc = jnp.reshape(xe_rx, (-1, 1, 1))
-    ze_rx_bc = jnp.reshape(ze_rx, (-1, 1, 1))
-    
+    # Explicit broadcasting. Dimensions will be [elements (active tx), pixels, patches]
+    xe = jnp.reshape(xe, (-1, 1, 1))
+    ze = jnp.reshape(ze, (-1, 1, 1))
     xp = jnp.reshape(xpc, (1, -1, 1)) + jnp.reshape(xk, (1, 1, -1))
     zp = jnp.reshape(zpc, (1, -1, 1)) + jnp.reshape(zk, (1, 1, -1))
     xp = xp + 0 * zp  # Manual broadcasting
     zp = zp + 0 * xp  # Manual broadcasting
 
-    # Compute time-of-flight for each {image, patch} pixel to each TX and RX element
+    # Compute time-of-flight for each {image, patch} pixel to each element (from each tx effective elemnet)
     # Time-of-flight from TX elements to image/patch pixels
-    def tof_image_tx(c): return time_of_flight(
-        xe_tx_bc, ze_tx_bc, xi, zi, xc, zc, c, fnum=0.5, npts=64)
+    def tof_image(c): return time_of_flight(
+        xe, ze, xi, zi, xc, zc, c, fnum=0.5, npts=64)
     
-    # Time-of-flight from RX elements to image/patch pixels (same as TX for reciprocity)
-    def tof_image_rx(c): return time_of_flight(
-        xe_rx_bc, ze_rx_bc, xi, zi, xc, zc, c, fnum=0.5, npts=64)
+    # # Time-of-flight from RX elements to image/patch pixels (same as TX for reciprocity)
+    # def tof_image_rx(c): return time_of_flight(
+    #     xe_rx_bc, ze_rx_bc, xi, zi, xc, zc, c, fnum=0.5, npts=64)
 
     # Time-of-flight from TX elements to patch pixels
-    def tof_patch_tx(c): return time_of_flight(
-        xe_tx_bc, ze_tx_bc, xp, zp, xc, zc, c, fnum=0.5, npts=64)
+    def tof_patch(c): return time_of_flight(
+        xe, ze, xp, zp, xc, zc, c, fnum=0.5, npts=64)
     
-    # Time-of-flight from RX elements to patch pixels
-    def tof_patch_rx(c): return time_of_flight(
-        xe_rx_bc, ze_rx_bc, xp, zp, xc, zc, c, fnum=0.5, npts=64)
+    # # Time-of-flight from RX elements to patch pixels
+    # def tof_patch_rx(c): return time_of_flight(
+    #     xe_rx_bc, ze_rx_bc, xp, zp, xc, zc, c, fnum=0.5, npts=64)
 
     def makeImage(c):
         t_tx = tof_image_tx(c)
@@ -239,8 +236,8 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None):
         return jnp.abs(das(iqdata, t_tx - t0, t_rx, fs, fd))
 
     def loss_wrapper(func, c):
-        t_tx = tof_patch_tx(c)
-        t_rx = tof_patch_rx(c)
+        t_tx = tof_patch(c)
+        # t_rx = tof_patch_rx(c)
         return (func)(iqdata, t_tx - t0, t_rx, fs, fd)
 
     # Define loss functions
