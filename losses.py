@@ -84,15 +84,25 @@ def phase_error(iq, t_tx, t_rx, fs, fd, thresh=0.9):
     # We create tx and rx subapertures of size 2*halfsa+1 elements, with
     # spacing determined by dx. These are made using das_subap.
     nrx, ntx, nsamps = iq.shape
-    mask = np.zeros((nrx, ntx))
+    # mask = np.zeros((nrx, ntx))
+    mask = np.zeros((ntx, ntx))
+    mask_rx = np.zeros((nrx, nrx))
     halfsa = 8  # Half of a subaperture
     dx = 1  # Subaperture increment
     for diag in range(-halfsa, halfsa + 1):
         mask = mask + jnp.diag(jnp.ones((ntx - abs(diag),)), diag)
     mask = mask[halfsa : mask.shape[0] - halfsa : dx]
+
+    for diag in range(-halfsa, halfsa + 1):
+        mask_rx = mask_rx + jnp.diag(jnp.ones((nrx - abs(diag),)), diag)
+    mask_rx = mask_rx[halfsa : mask_rx.shape[0] - halfsa : dx]
     At = mask[::-1]
-    Ar = mask
-    iqfoc = das(iq, t_tx, t_rx, fs, fd, At, Ar)
+    Ar = mask_rx[::-1]
+    ## enforce same number of subaperture for tx and rx for Hermitaion matrix assumtion later on
+    nsub = min(At.shape[0], Ar.shape[0])
+    At = At[:nsub]
+    Ar = Ar[:nsub]
+    iqfoc = das(iq,t_rx, t_tx, fs, fd, Ar,At)
 
     # Now compute the correlation between neighboring pulse-echo signals with
     # common midpoints. If <A,B> is the correlation between A and B, we want

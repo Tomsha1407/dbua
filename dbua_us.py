@@ -154,20 +154,21 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None):
     # change iqdata to elment_data. i.e arrange the cd correctly 
 
     element_data_from_CD = channel_to_element(channel_data=data["channel_data"], ch2el=data["channel_element_mapping"])
-    iqdata_full = element_data_from_CD[0] #(204,238,1104)
-    
+    iqdata_full = element_data_from_CD[0] #(204,238,1104) =(tx,rx,nt)
+    iqdata_full = iqdata_full.transpose(1,0,2) #(rx,tx,nt)
     # Remove rx padding symmetrically from center:
     num_elemnts = elemnt_position.shape[1]
-    remove_rx = (iqdata_full.shape[1] - num_elemnts) // 2
-    iqdata = iqdata_full[:, remove_rx:iqdata_full.shape[1]-remove_rx, :]
+    remove_rx = (iqdata_full.shape[0] - num_elemnts) // 2
+    iqdata = iqdata_full[remove_rx:iqdata_full.shape[0]-remove_rx,:, :]
 
     if ntx != None:
-        keep_tx = (iqdata.shape[0] - ntx) //2    
-        iqdata = iqdata[keep_tx:keep_tx+ntx, :, :]
+        keep_tx = (iqdata.shape[1] - ntx) //2    
+        iqdata = iqdata[:,keep_tx:keep_tx+ntx, :]
         tx_origin = tx_origin[:,keep_tx:keep_tx+ntx]
     if nrx != None:
-        keep_rx = (iqdata.shape[1] - nrx) //2    
-        iqdata = iqdata[:, keep_rx:keep_rx+nrx, :]
+        keep_rx = (iqdata.shape[0] - nrx) //2    
+        iqdata = iqdata[keep_rx:keep_rx+nrx,:, :]
+        elemnt_position = elemnt_position[:, keep_rx:keep_rx+nrx]
 
     if nt != None:
         iqdata = iqdata[:,:,:nt]
@@ -181,6 +182,8 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None):
 
     # xe, _, ze = jnp.array(elemnt_position)
     xe, _, ze = jnp.array(tx_origin)
+    ## rx elemnt position
+    r_xe, _, r_ze = jnp.array(elemnt_position)
     wl0 = ASSUMED_C / fd  # wavelength (λ)
 
     # B-mode image dimensions
@@ -208,6 +211,8 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None):
     # Explicit broadcasting. Dimensions will be [elements (active tx), pixels, patches]
     xe = jnp.reshape(xe, (-1, 1, 1))
     ze = jnp.reshape(ze, (-1, 1, 1))
+    r_xe = jnp.reshape(r_xe, (-1, 1, 1))
+    r_ze = jnp.reshape(r_ze, (-1, 1, 1))
     xp = jnp.reshape(xpc, (1, -1, 1)) + jnp.reshape(xk, (1, 1, -1))
     zp = jnp.reshape(zpc, (1, -1, 1)) + jnp.reshape(zk, (1, 1, -1))
     xp = xp + 0 * zp  # Manual broadcasting
@@ -215,30 +220,30 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None):
 
     # Compute time-of-flight for each {image, patch} pixel to each element (from each tx effective elemnet)
     # Time-of-flight from TX elements to image/patch pixels
-    def tof_image(c): return time_of_flight(
+    def tof_image_tx(c): return time_of_flight(
         xe, ze, xi, zi, xc, zc, c, fnum=0.5, npts=64)
     
-    # # Time-of-flight from RX elements to image/patch pixels (same as TX for reciprocity)
-    # def tof_image_rx(c): return time_of_flight(
-    #     xe_rx_bc, ze_rx_bc, xi, zi, xc, zc, c, fnum=0.5, npts=64)
+    # Time-of-flight from RX elements to image/patch pixels (same as TX for reciprocity)
+    def tof_image_rx(c): return time_of_flight(
+        xi, zi, r_xe, r_ze, xc, zc, c, fnum=0.5, npts=64)
 
     # Time-of-flight from TX elements to patch pixels
-    def tof_patch(c): return time_of_flight(
+    def tof_patch_tx(c): return time_of_flight(
         xe, ze, xp, zp, xc, zc, c, fnum=0.5, npts=64)
     
-    # # Time-of-flight from RX elements to patch pixels
-    # def tof_patch_rx(c): return time_of_flight(
-    #     xe_rx_bc, ze_rx_bc, xp, zp, xc, zc, c, fnum=0.5, npts=64)
+    # Time-of-flight from RX elements to patch pixels
+    def tof_patch_rx(c): return time_of_flight(
+         xp, zp,  r_xe, r_ze, xc, zc, c, fnum=0.5, npts=64)
 
     def makeImage(c):
         t_tx = tof_image_tx(c)
         t_rx = tof_image_rx(c)
-        return jnp.abs(das(iqdata, t_tx - t0, t_rx, fs, fd))
+        return jnp.abs(das(iqdata, t_rx, t_tx - t0, fs, fd)) #rx first
 
     def loss_wrapper(func, c):
-        t_tx = tof_patch(c)
-        # t_rx = tof_patch_rx(c)
-        return (func)(iqdata, t_tx - t0, t_rx, fs, fd)
+        t_tx = tof_patch_tx(c)
+        t_rx = tof_patch_rx(c)
+        return (func)(iqdata, t_rx, t_tx - t0, fs, fd)#rx first
 
     # Define loss functions
     sb_loss = jit(lambda c: 1 - loss_wrapper(speckle_brightness, c))
@@ -249,7 +254,7 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None):
     def pe_loss(c):
         t_tx = tof_patch_tx(c)
         t_rx = tof_patch_rx(c)
-        dphi = phase_error(iqdata, t_tx - t0, t_rx, fs, fd)
+        dphi = phase_error(iqdata, t_tx - t0,t_rx, fs, fd) #iqdata shape (nrx, ntx, nsamps), t_rx should be second!
         valid = dphi != 0
         dphi = jnp.where(valid, jnp.where(valid, dphi, jnp.nan), jnp.nan)
         return jnp.nanmean(jnp.log1p(jnp.square(100 * dphi)))
@@ -393,5 +398,5 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None):
 if __name__ == "__main__":
     exp_name = '0003490e_20250611'
     # main(exp_name, LOSS, n_elemnts=30, nt=800, name="origin") # n_elemnts>NXP (or NZP) = 17 for pe 
-    main(exp_name='0003490e_20250611', loss_name='pe', ntx=30, nrx=40, nt=800, name="debug")
+    main(exp_name='0003490e_20250611', loss_name='pe', ntx=30, nrx=40, nt=800, name="debug") ## 8 < min(ntx,nrx)//2
 

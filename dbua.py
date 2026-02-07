@@ -185,8 +185,10 @@ def main(sample, loss_name):
         xe, ze, xp, zp, xc, zc, c, fnum=0.5, npts=64)
 
     def makeImage(c):
-        t = tof_image(c)
-        return jnp.abs(das(iqdata, t - t0, t, fs, fd))
+        t_tx = tof_image(c)
+        t_rx = tof_image(c)
+    
+        return jnp.abs(das(iqdata, t_tx - t0, t, fs, fd))
 
     def loss_wrapper(func, c):
         t = tof_patch(c)
