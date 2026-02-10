@@ -78,6 +78,23 @@ def bf(data: dict[str, np.ndarray], stream: int = 0, frame: int = 0) -> np.ndarr
     IQbf = (M @ el_data.reshape(ns * nl * nc)).reshape(ns, nl)  # (ns * nl) = (ns * nl, ns * nc*nl) @ (ns * nc * nl)
     return IQbf
 
+def bf_1frame(data: dict[str, np.ndarray]) -> np.ndarray:
+    el_data = data["el_data"]
+    ns, nc, nl = el_data.shape
+    l_vals = np.arange(nl)
+    tx_origins = data["tx_origins"]
+    element_positions = data["element_positions"][:, [0, 2]]
+    tx_directions = data["tx_directions"]
+    pixel_grid = np.array(
+        [
+            tx_origins[line_num, [0, 2]] + (l_vals * STEPSIZE)[..., None] * tx_directions[line_num, [0, 2]]
+            for line_num in range(ns)
+        ]
+    )  # (nc, nl, 2)
+    M = mla1_mtx(pixel_grid, element_positions)
+    IQbf = (M @ el_data.reshape(ns * nl * nc)).reshape(ns, nl)  # (ns * nl) = (ns * nl, ns * nc*nl) @ (ns * nc * nl)
+    return IQbf
+
 
 def mla1(data, stream=0, frame=0):
     """Deprecated: use mla1_mtx instead."""

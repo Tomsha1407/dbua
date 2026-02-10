@@ -398,5 +398,5 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None):
 if __name__ == "__main__":
     exp_name = '0003490e_20250611'
     # main(exp_name, LOSS, n_elemnts=30, nt=800, name="origin") # n_elemnts>NXP (or NZP) = 17 for pe 
-    main(exp_name='0003490e_20250611', loss_name='pe', ntx=30, nrx=40, nt=800, name="debug") ## 8 < min(ntx,nrx)//2
+    main(exp_name='0003490e_20250611', loss_name='pe', ntx=204, nrx=200, nt=800, name="tx204rx200") ## 8 < min(ntx,nrx)//2
 

@@ -1,4 +1,4 @@
-from signal_biopsy_core.io.file_fetcher import fetch_ush5_file
+from ..signal_biopsy_core.io.file_fetcher import fetch_ush5_file
 
 
 exp_name = '0003490e_20250611'
