@@ -2,7 +2,24 @@ import jax.numpy as jnp
 from jax import jit, vmap, checkpoint
 from jax.lax import map
 from functools import partial
+import numpy as np
+from mla1 import mla1_mtx
+STEPSIZE = 6.16e-5  # m  file["rx_setup/[0]/stepsize_samples"]
 
+# def mla1_our(iqraw, tx_origins, element_positions, tx_directions, tA, tB, fs, fd, A=None, B=None, apoA=1, apoB=1, interp="cubic"):
+def mla1_our(iqraw, tx_origins, element_positions, tx_directions):
+    ns, nc, nl = iqraw.shape
+    l_vals = np.arange(nl)
+    element_positions = element_positions[:, [0, 2]]
+    pixel_grid = np.array(
+        [
+            tx_origins[line_num, [0, 2]] + (l_vals * STEPSIZE)[..., None] * tx_directions[line_num, [0, 2]]
+            for line_num in range(ns)
+        ]
+            )  # (nc, nl, 2)
+    M = mla1_mtx(pixel_grid, element_positions)
+    IQbf = (M @ iqraw.reshape(ns * nl * nc)).reshape(ns, nl)  # (ns * nl) = (ns * nl, ns * nc*nl) @ (ns * nc * nl)
+    return IQbf
 
 @partial(jit, static_argnums=(3, 4))
 def das(iqraw, tA, tB, fs, fd, A=None, B=None, apoA=1, apoB=1, interp="cubic"):

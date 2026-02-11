@@ -116,4 +116,4 @@ def create_bmode_mla1(exp_name, ntx = None, nrx=None, nt = None):
 
 if __name__ == "__main__":
     exp_name = '0003490e_20250611'
-    create_bmode_mla1(exp_name,ntx=100, nrx=200, nt=800)
+    create_bmode_mla1(exp_name, ntx=100, nrx=100, nt=800)
