@@ -24,11 +24,11 @@ N_ITERS = 301
 LEARNING_RATE = 10
 ASSUMED_C = 1540  # [m/s]
 
-# B-mode limits in m
-BMODE_X_MIN = -12e-3
-BMODE_X_MAX = 12e-3
-BMODE_Z_MIN = 0e-3
-BMODE_Z_MAX = 40e-3
+# # B-mode limits in m
+# BMODE_X_MIN = -12e-3
+# BMODE_X_MAX = 12e-3
+# BMODE_Z_MIN = 0e-3
+# BMODE_Z_MAX = 40e-3
 
 # Sound speed grid in m
 SOUND_SPEED_X_MIN = -12e-3
@@ -185,6 +185,11 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None):
     ## rx elemnt position
     r_xe, _, r_ze = jnp.array(elemnt_position)
     wl0 = ASSUMED_C / fd  # wavelength (λ)
+
+    BMODE_X_MIN = -(iqdata.shape[1]*wl0)/(6)
+    BMODE_X_MAX = (iqdata.shape[1]*wl0)/(6)
+    BMODE_Z_MIN = -(iqdata.shape[2]*wl0)/(6)
+    BMODE_Z_MAX = (iqdata.shape[2]*wl0)/(6)
 
     # B-mode image dimensions
     xi = jnp.arange(BMODE_X_MIN, BMODE_X_MAX, wl0 / 3)
@@ -398,5 +403,5 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None):
 if __name__ == "__main__":
     exp_name = '0003490e_20250611'
     # main(exp_name, LOSS, n_elemnts=30, nt=800, name="origin") # n_elemnts>NXP (or NZP) = 17 for pe 
-    main(exp_name='0003490e_20250611', loss_name='pe', ntx=204, nrx=200, nt=800, name="tx204rx200") ## 8 < min(ntx,nrx)//2
+    main(exp_name='0003490e_20250611', loss_name='pe', ntx=204, nrx=200, nt=800, name="tx204rx200_correctbmode_size") ## 8 < min(ntx,nrx)//2
 

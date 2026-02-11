@@ -24,10 +24,10 @@ LEARNING_RATE = 10
 ASSUMED_C = 1540  # [m/s]
 
 # B-mode limits in m
-BMODE_X_MIN = -12e-3
-BMODE_X_MAX = 12e-3
-BMODE_Z_MIN = 0e-3
-BMODE_Z_MAX = 40e-3
+# BMODE_X_MIN = -12e-3
+# BMODE_X_MAX = 12e-3
+# BMODE_Z_MIN = 0e-3
+# BMODE_Z_MAX = 40e-3
 
 # Sound speed grid in m
 SOUND_SPEED_X_MIN = -12e-3
@@ -83,8 +83,11 @@ def imagesc(xc, y, img, dr, **kwargs):
     dx = xc[1] - xc[0]
     dy = y[1] - y[0]
     ext = [xc[0] - dx / 2, xc[-1] + dx / 2, y[-1] + dy / 2, y[0] - dy / 2]
-    im = plt.imshow(img, vmin=dr[0], vmax=dr[1], extent=ext, **kwargs)
-    plt.colorbar()
+    # im = plt.imshow(img, vmin=dr[0], vmax=dr[1], extent=ext, **kwargs)
+    figsize = (4, 6)
+    fig, ax = plt.subplots(figsize=figsize)
+    im = ax.imshow(img, cmap="bone", aspect='auto')
+    # plt.colorbar()
     return im
 
 def load_dataset(sample):
@@ -170,6 +173,10 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None):
     r_xe, _, r_ze = jnp.array(elemnt_position)
     wl0 = ASSUMED_C / fd  # wavelength (λ)
 
+    BMODE_X_MIN = -(iqdata.shape[1]*wl0)/(6)
+    BMODE_X_MAX = (iqdata.shape[1]*wl0)/(6)
+    BMODE_Z_MIN = -(iqdata.shape[2]*wl0)/(6)
+    BMODE_Z_MAX = (iqdata.shape[2]*wl0)/(6)
     # B-mode image dimensions
     xi = jnp.arange(BMODE_X_MIN, BMODE_X_MAX, wl0 / 3)
     zi = jnp.arange(BMODE_Z_MIN, BMODE_Z_MAX, wl0 / 3)
@@ -287,7 +294,8 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None):
         if handles is None:
             bmax = np.max(b)
         else:
-            hbi, hci, hbt, hct, bmax = handles
+            # hbi, hci, hbt, hct, bmax = handles
+            hbi, bmax = handles
         
         # bimg = np.log10(np.abs(b) + 1e-8)
 
@@ -307,47 +315,26 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None):
             print("jaxbf runs at %.1f fps." % (100.0 / ((toc - tic) * 1e-9)))
 
             # On the first time, create the figure
-            fig.clf()
-            plt.subplot(121)
+            # fig.clf()
             hbi = imagesc(ximm, zimm, bimg, bdr, cmap="bone",
                           interpolation="bicubic")
-            hbt = plt.title(
-                "SB: %.2f, CF: %.3f, PE: %.3f" % (
-                    sb_loss(c), cf_loss(c), pe_loss(c))
-            )
-            plt.xlim(ximm[0], ximm[-1])
-            plt.ylim(zimm[-1], zimm[0])
-            plt.subplot(122)
-            hci = imagesc(xcmm, zcmm, cimg, cdr, cmap=cmap,
-                          interpolation="bicubic")
-            if 0 > 0:  # When ground truth is provided, show the error
-                hct = plt.title(
-                    "Iteration %d: MAE %.2f"
-                    % (i, np.mean(np.abs(cimg - 0)))
-                )
-            else:
-                hct = plt.title("Iteration %d: Mean value %.2f" %
-                                (i, np.mean(cimg)))
 
-            plt.xlim(ximm[0], ximm[-1])
-            plt.ylim(zimm[-1], zimm[0])
-            fig.tight_layout()
-            return hbi, hci, hbt, hct, bmax
+            # plt.xlim(ximm[0], ximm[-1])
+            # plt.ylim(zimm[-1], zimm[0])
+            # plt.subplot(122)
+            # hci = imagesc(xcmm, zcmm, cimg, cdr, cmap=cmap,
+            #               interpolation="bicubic")
+
+
+            # plt.xlim(ximm[0], ximm[-1])
+            # plt.ylim(zimm[-1], zimm[0])
+            # fig.tight_layout()
+            return hbi, bmax
+            # return hbi, hci, hbt, hct, bmax
+
         else:
             hbi.set_data(bimg)
-            hci.set_data(cimg)
-            hbt.set_text(
-                "SB: %.2f, CF: %.3f, PE: %.3f" % (
-                    sb_loss(c), cf_loss(c), pe_loss(c))
-            )
-            if 0 > 0:
-                hct.set_text(
-                    "Iteration %d: MAE %.2f"
-                    % (i, np.mean(np.abs(cimg -0)))
-                )
-            else:
-                hct.set_text("Iteration %d: Mean value %.2f" %
-                             (i, np.mean(cimg)))
+            # hci.set_data(cimg)
 
         plt.savefig(f"scratch/{exp_name+name}.png")
 
@@ -366,5 +353,5 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None):
 
 if __name__ == "__main__":
     exp_name = '0003490e_20250611'
-    main(exp_name='0003490e_20250611', loss_name='pe', ntx=100, nrx=100, nt=800, name="fixc0_tx100_rx100_nt800_mla1") ## 8 < min(ntx,nrx)//2
+    main(exp_name='0003490e_20250611', loss_name='pe', ntx=100, nrx=100, nt=800, name="fixc0_tx100_rx100_nt800_mla1V2") ## 8 < min(ntx,nrx)//2
 
