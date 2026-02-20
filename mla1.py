@@ -28,7 +28,8 @@ def mla1_mtx(pixel_grid: np.ndarray, element_positions: np.ndarray) -> coo_matri
     d_transmit = l_vals * STEPSIZE  # (nl)
 
     M_list = []
-    for line_num in tqdm(range(ns)):  # sum over transmisions
+    # for line_num in tqdm(range(ns)):  # sum over transmisions
+    for line_num in range(ns):  # sum over transmisions
         pixel_pos = pixel_grid[line_num]  # (nl, 2)
 
         d_receive = np.linalg.norm(
