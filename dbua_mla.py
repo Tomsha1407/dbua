@@ -19,21 +19,21 @@ from losses import (
 )
 import time
 
-N_ITERS = 2#301
+N_ITERS = 301
 LEARNING_RATE = 10
 ASSUMED_C = 1540  # [m/s]
 
 # B-mode limits in m
-# BMODE_X_MIN = -12e-3
-# BMODE_X_MAX = 12e-3
-# BMODE_Z_MIN = 0e-3
-# BMODE_Z_MAX = 40e-3
+BMODE_X_MIN = -12e-3
+BMODE_X_MAX = 12e-3
+BMODE_Z_MIN = 0e-3
+BMODE_Z_MAX = 40e-3
 
 # Sound speed grid in m
-SOUND_SPEED_X_MIN = -12e-3
-SOUND_SPEED_X_MAX = 12e-3
-SOUND_SPEED_Z_MIN = 0e-3
-SOUND_SPEED_Z_MAX = 40e-3
+# SOUND_SPEED_X_MIN = -12e-3
+# SOUND_SPEED_X_MAX = 12e-3
+# SOUND_SPEED_Z_MIN = 0e-3
+# SOUND_SPEED_Z_MAX = 40e-3
 SOUND_SPEED_NXC = 19
 SOUND_SPEED_NZC = 31
 
@@ -179,6 +179,11 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None):
     BMODE_X_MAX = (iqdata.shape[1]*wl0)/(6)
     BMODE_Z_MIN = -(iqdata.shape[2]*wl0)/(6)
     BMODE_Z_MAX = (iqdata.shape[2]*wl0)/(6)
+
+    SOUND_SPEED_X_MIN = -(iqdata.shape[1]*wl0)/(6)
+    SOUND_SPEED_X_MAX = (iqdata.shape[1]*wl0)/(6)
+    SOUND_SPEED_Z_MIN = -(iqdata.shape[2]*wl0)/(6)
+    SOUND_SPEED_Z_MAX = (iqdata.shape[2]*wl0)/(6)
     # B-mode image dimensions
     xi = jnp.arange(BMODE_X_MIN, BMODE_X_MAX, wl0 / 3)
     zi = jnp.arange(BMODE_Z_MIN, BMODE_Z_MAX, wl0 / 3)
@@ -274,10 +279,7 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None):
                       fun=loss)  # Stochastic optimizer
     state = opt.init_state(c)
 
-    # Create the figure writer. Use fixed-inch axes so each image is larger
-    # Each image 600x400 px = 4.167 x 2.778 in at 144 DPI
-    fig = plt.figure(figsize=(9, 3.2))
-    # Ensure a known DPI so pixel-based axis sizing is predictable
+    fig = plt.figure(figsize=(8, 6))
     fig.set_dpi(144)
     vobj = FFMpegWriter(fps=30)
     vobj.setup(fig, "videos/mla/%s_opt%s.mp4" % (exp_name+name, loss_name), dpi=144)
