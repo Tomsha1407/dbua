@@ -2,7 +2,7 @@ import numpy as np
 import jax.numpy as jnp
 from jax import jit, lax
 from functools import partial
-from das import das
+from das import das, mla1_our
 
 
 @partial(jit, static_argnums=(3, 4))
@@ -36,13 +36,15 @@ def coherence_factor(iq, t_tx, t_rx, fs, fd):
     return num / den
 
 
-@partial(jit, static_argnums=(3, 4))
-def speckle_brightness(iq, t_tx, t_rx, fs, fd):
+@partial(jit, static_argnums=(2,3,4,5,6,7))
+# def speckle_brightness(iq, t_tx, t_rx, fs, fd):
+def speckle_brightness(c,iq, tx_origin, elemnt_position,tx_direction, t0, fs, fd):
     """
     The speckle brightness criterion (DOI: 10.1121/1.397889)
     Speckle brightness can be used to measure the focusing quality.
     """
-    return jnp.nanmean(jnp.abs(das(iq, t_tx, t_rx, fs, fd)))
+    # return jnp.nanmean(jnp.abs(das(iq, t_tx, t_rx, fs, fd)))
+    return jnp.nanmean(jnp.abs(mla1_our(iq.transpose(1,0,2), tx_origin.T, elemnt_position.T, tx_direction, fd, t0,fs, c)))
 
 
 @jit

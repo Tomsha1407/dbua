@@ -21,6 +21,7 @@ def mla1_mtx_no_fixedSOS(pixel_grid: np.ndarray, element_positions: np.ndarray, 
     pixel_grid = jnp.asarray(pixel_grid)
     element_positions = jnp.asarray(element_positions)
     sos = jnp.asarray(sos)
+    # sos = jnp.asarray(np.full_like(sos, 1540))
 
     ns, nl, _ = pixel_grid.shape
     nc, _ = element_positions.shape
@@ -110,7 +111,7 @@ def mla1_our(iqraw, tx_origins, element_positions, tx_directions,fd, t0,fs, c):
         # distances (nl, nc)
         d_receive = jnp.linalg.norm(pixel_pos[:, None, :] - element_positions[None, :, :], axis=-1)
         # tau and fractional sample indices (nl, nc)
-        tau = (d_receive + d_transmit[:, None]) / c
+        tau = (d_receive + d_transmit[:, None]) / c.T
         idxt = tau * fs - t0
 
         # prepare for gather: transpose iq_line to (nl, nc) so axis 0 is sample index

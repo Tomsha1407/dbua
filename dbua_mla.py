@@ -34,8 +34,8 @@ BMODE_Z_MAX = 40e-3
 # SOUND_SPEED_X_MAX = 12e-3
 # SOUND_SPEED_Z_MIN = 0e-3d
 # SOUND_SPEED_Z_MAX = 40e-3
-SOUND_SPEED_NXC = 800 #800#19
-SOUND_SPEED_NZC = 200 #200#31
+SOUND_SPEED_NXC = 200 #800#19
+SOUND_SPEED_NZC = 800 #200#31
 
 # Phase estimate kernel size in samples
 NXK, NZK = 5, 5
@@ -44,8 +44,8 @@ NXK, NZK = 5, 5
 NXP, NZP = 17, 17
 PHASE_ERROR_X_MIN = -20e-3
 PHASE_ERROR_X_MAX = 20e-3
-PHASE_ERROR_Z_MIN = 4e-3
-PHASE_ERROR_Z_MAX = 44e-3
+PHASE_ERROR_Z_MIN = 15e-2 #4e-3
+PHASE_ERROR_Z_MAX = -15e-2#44e-3
 
 # Loss options
 # -"pe" for phase error
@@ -53,7 +53,7 @@ PHASE_ERROR_Z_MAX = 44e-3
 # -"cf" for coherence factor
 # -"lc" for lag one coherence
 
-LOSS = "pe"
+LOSS = "sb"#"pe"
 
 
 
@@ -241,14 +241,16 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None):
         return jnp.abs(mla1_our(iqdata.transpose(1,0,2), tx_origin.T, elemnt_position.T, tx_direction, fd, t0,fs, c)) #tx first 
 
     def loss_wrapper(func, c):
-        t_tx = tof_patch_tx(c)
-        t_rx = tof_patch_rx(c)
-        return (func)(iqdata, t_rx, t_tx - t0, fs, fd)#rx first
+        # t_tx = tof_patch_tx(c)
+        # t_rx = tof_patch_rx(c)
+        # return (func)(iqdata, t_rx, t_tx - t0, fs, fd)#rx first
+        return (func)(c,iqdata, tx_origin, elemnt_position,tx_direction, t0, fs, fd)#rx first
+
 
     # Define loss functions
     sb_loss = jit(lambda c: 1 - loss_wrapper(speckle_brightness, c))
-    lc_loss = jit(lambda c: 1 - jnp.mean(loss_wrapper(lag_one_coherence, c)))
-    cf_loss = jit(lambda c: 1 - jnp.mean(loss_wrapper(coherence_factor, c)))
+    # lc_loss = jit(lambda c: 1 - jnp.mean(loss_wrapper(lag_one_coherence, c)))
+    # cf_loss = jit(lambda c: 1 - jnp.mean(loss_wrapper(coherence_factor, c)))
 
     @jit
     def pe_loss(c):
@@ -283,7 +285,7 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None):
     fig = plt.figure(figsize=(8, 6))
     fig.set_dpi(144)
     vobj = FFMpegWriter(fps=30)
-    vobj.setup(fig, "videos/mla/%s_opt%s.mp4" % (exp_name+name, loss_name), dpi=144)
+    vobj.setup(fig, "videos/mla_changesSOS/%s_opt%s.mp4" % (exp_name+name, loss_name), dpi=144)
 
     # Create the image axes for plotting
     ximm = xi[:, 0] * 1e3
@@ -308,13 +310,13 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None):
         bimg = bimg + 1e-10 * (bimg == 0)  # Avoid nans
         bimg = 20 * np.log10(bimg)
         bimg = np.reshape(bimg, (nxi, nzi)).T
-        cimg = np.reshape(cimg, (SOUND_SPEED_NXC, SOUND_SPEED_NZC))
+        cimg = np.reshape(cimg, (SOUND_SPEED_NXC, SOUND_SPEED_NZC)).T
 
         if handles is None:
             # On the first call, report the fps of jax
             tic = time.perf_counter_ns()
             for _ in range(30):
-                b = makeImage(cimg)
+                b = makeImage(cimg.T)
             b.block_until_ready()
             toc = time.perf_counter_ns()
             print("jaxbf runs at %.1f fps." % (100.0 / ((toc - tic) * 1e-9)))
@@ -324,8 +326,8 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None):
             hbi = imagesc(ximm, zimm, bimg, bdr, cmap="bone",
                           interpolation="bicubic")
             hbt = plt.title(
-                "SB: %.2f, CF: %.3f, PE: %.3f" % (
-                    sb_loss(c), cf_loss(c), pe_loss(c))
+                "SB: %.2f, PE: %.3f" % (
+                    sb_loss(c), pe_loss(c))
             )
             plt.xlim(ximm[0], ximm[-1])
             plt.ylim(zimm[-1], zimm[0])
@@ -349,8 +351,8 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None):
             hbi.set_data(bimg)
             hci.set_data(cimg)
             hbt.set_text(
-                "SB: %.2f, CF: %.3f, PE: %.3f" % (
-                    sb_loss(c), cf_loss(c), pe_loss(c))
+                "SB: %.2f, PE: %.3f" % (
+                    sb_loss(c), pe_loss(c))
             )
             if 0 > 0:
                 hct.set_text(
@@ -360,7 +362,7 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None):
             else:
                 hct.set_text("Iteration %d: Mean value %.2f" %
                              (i, np.mean(cimg)))
-        fig.savefig(f"mla/{exp_name+name}.png", dpi=fig.get_dpi())
+        fig.savefig(f"mla_changesSOS/{exp_name+name}.png", dpi=fig.get_dpi())
 
     # Initialize figure
     handles = makeFigure(c, 0)
@@ -377,5 +379,5 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None):
 
 if __name__ == "__main__":
     exp_name = '0003490e_20250611'
-    main(exp_name='0003490e_20250611', loss_name='pe', ntx=200, nrx=200, nt=800, name="tx200_rx200_nt800_mla1_TEST") ## 8 < min(ntx,nrx)//2
+    main(exp_name='0003490e_20250611', loss_name='sb', ntx=200, nrx=200, nt=800, name="tx200_rx200_nt800_NOTfixed_sb") ## 8 < min(ntx,nrx)//2
 
