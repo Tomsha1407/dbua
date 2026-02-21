@@ -376,5 +376,5 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None):
 
 if __name__ == "__main__":
     exp_name = '0003490e_20250611'
-    main(exp_name='0003490e_20250611', loss_name='pe', ntx=100, nrx=100, nt=800, name="fixc0_tx100_rx100_nt800_mla1V2") ## 8 < min(ntx,nrx)//2
+    main(exp_name='0003490e_20250611', loss_name='pe', ntx=200, nrx=100, nt=800, name="tx200_rx100_nt800_mla1") ## 8 < min(ntx,nrx)//2
 

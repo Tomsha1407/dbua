@@ -106,13 +106,45 @@ def create_bmode_mla1(exp_name, ntx = None, nrx=None, nt = None):
     print(f"Original image shape: (y={height}, x={width})")
     print(f"Interpolated image shape: (y={log_abs_bf.shape[0]}, x={log_abs_bf.shape[1]})")
 
+    ASSUMED_C = 1540
+    wl0 = ASSUMED_C / fd  # wavelength (λ)
+    BMODE_X_MIN = -(iqdata.shape[1]*wl0)/(6)
+    BMODE_X_MAX = (iqdata.shape[1]*wl0)/(6)
+    BMODE_Z_MIN = -(iqdata.shape[2]*wl0)/(6)
+    BMODE_Z_MAX = (iqdata.shape[2]*wl0)/(6)
+
+    # B-mode image dimensions
+    xi = np.arange(BMODE_X_MIN, BMODE_X_MAX, wl0 / 3)
+    zi = np.arange(BMODE_Z_MIN, BMODE_Z_MAX, wl0 / 3)
+    nxi, nzi = xi.size, zi.size
+    xi, zi = np.meshgrid(xi, zi, indexing="ij")
+ 
+    xc = xi[:, 0] * 1e3
+    y = zi[0, :] * 1e3
     figsize = (4, 6)
     fig, ax = plt.subplots(figsize=figsize)
-    im = ax.imshow(log_abs_bf, cmap='gray', aspect='auto')
-    ax.set_title("Beamformed Log-Abs Image")
-    plt.axis('off')
-    plt.savefig(f"mla_{exp_name}_ntx{ntx}_nrx{nrx}_nt{nt}.png")
-    plt.show()
+    fig.set_dpi(144)
+    b_abs = np.abs(beamformed_image.T)
+    bimg = b_abs / np.max(b_abs)
+    bimg = bimg + 1e-10 * (bimg == 0)  # Avoid nans
+    bimg = 20 * np.log10(bimg)
+    dx = xc[1] - xc[0]
+    dy = y[1] - y[0]
+    ext = [xc[0] - dx / 2, xc[-1] + dx / 2, y[-1] + dy / 2, y[0] - dy / 2]
+    # im = ax.imshow(bimg, vmin=-45, vmax=+5, extent=ext, cmap="bone",
+    #                       interpolation="bicubic")
+    im = ax.imshow(bimg, extent=ext, cmap="bone",
+                          interpolation="bicubic")
+    # plt.colorbar()
+    plt.title("Beamformed Log-Abs Image")
+    fig.savefig(f"mla/mla_woMinMax{exp_name}_ntx{ntx}_nrx{nrx}_nt{nt}.png", dpi=fig.get_dpi())
+
+    # fig, ax = plt.subplots(figsize=figsize)
+    # im = ax.imshow(log_abs_bf, cmap='gray', aspect='auto')
+    # ax.set_title("Beamformed Log-Abs Image")
+    # plt.axis('off')
+    # plt.savefig(f"mla_{exp_name}_ntx{ntx}_nrx{nrx}_nt{nt}.png")
+    # plt.show()
 
 if __name__ == "__main__":
     exp_name = '0003490e_20250611'
