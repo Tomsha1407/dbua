@@ -3,22 +3,140 @@ from jax import jit, vmap, checkpoint
 from jax.lax import map
 from functools import partial
 import numpy as np
+from scipy.sparse import block_diag, coo_matrix
 from mla1 import mla1_mtx
 STEPSIZE = 6.16e-5  # m  file["rx_setup/[0]/stepsize_samples"]
 
+def mla1_mtx_no_fixedSOS(pixel_grid: np.ndarray, element_positions: np.ndarray, fIQd: float, idx0: float, fs: float, sos: np.ndarray) -> jnp.ndarray:
+    """
+    Calculate the matrix for the MLA1 beamforming algorithm, using a SOS map instead of a fixed value.
+    Args:
+    pixel_grid: (ns, nl, 2) array of pixel positions in the grid
+    element_positions: (nc, 2) array of element positions
+    Returns:
+    coo_matrix: (ns * nl, ns * nl * nc) A sparse matrix in COO format representing the beamforming operation
+    """
+
+    wc = 2 * jnp.pi * fIQd
+    pixel_grid = jnp.asarray(pixel_grid)
+    element_positions = jnp.asarray(element_positions)
+    sos = jnp.asarray(sos)
+
+    ns, nl, _ = pixel_grid.shape
+    nc, _ = element_positions.shape
+    l_vals = jnp.arange(nl)
+    d_transmit = l_vals * STEPSIZE  # (nl,)
+
+    out_rows = ns * nl
+    out_cols = ns * nl * nc
+    M_block = jnp.zeros((out_rows, out_cols), dtype=jnp.complex32)
+
+    # Build each per-line dense matrix and place into the block-diagonal positions
+    for line_num in range(ns):
+        pixel_pos = pixel_grid[line_num]  # (nl, 2)
+
+        # distances from pixels to receive elements: (nl, nc)
+        d_receive = jnp.linalg.norm(pixel_pos[:, None, :] - element_positions[None, :, :], axis=-1)
+        tau = (d_receive + d_transmit[:, None]) / sos  # (nl, nc)
+        idxt = tau * fs - idx0  # (nl, nc)
+
+        # grid of row (pixel) and column (element) indices
+        r_idx, c_idx = jnp.meshgrid(jnp.arange(nl), jnp.arange(nc), indexing="ij")
+
+        r_flat = r_idx.ravel()
+        c_flat = c_idx.ravel()
+        idxt_flat = idxt.ravel()
+        tau_flat = tau.ravel()
+
+        valid = (idxt_flat >= 0) & (idxt_flat <= (nl - 2))
+        if valid.sum() == 0:
+            # no valid contributions for this line
+            continue
+
+        idxf = jnp.floor(idxt_flat).astype(int)
+        frac = idxt_flat - idxf
+
+        phase = jnp.exp(1j * wc * tau_flat)
+        vals0 = (1 - frac) * phase
+        vals1 = frac * phase
+
+        cols0 = c_flat * nl + idxf
+        cols1 = c_flat * nl + (idxf + 1)
+        rows = r_flat
+
+        # select only valid contributions
+        rows_sel = rows[valid]
+        cols0_sel = cols0[valid]
+        cols1_sel = cols1[valid]
+        vals0_sel = vals0[valid]
+        vals1_sel = vals1[valid]
+
+        # per-line dense matrix (nl, nl*nc)
+        M_line = jnp.zeros((nl, nl * nc), dtype=jnp.complex128)
+        M_line = M_line.at[rows_sel, cols0_sel].add(vals0_sel)
+        M_line = M_line.at[rows_sel, cols1_sel].add(vals1_sel)
+
+        row_off = line_num * nl
+        col_off = line_num * nl * nc
+        M_block = M_block.at[row_off : row_off + nl, col_off : col_off + nl * nc].set(M_line)
+
+    return M_block
+
 # def mla1_our(iqraw, tx_origins, element_positions, tx_directions, tA, tB, fs, fd, A=None, B=None, apoA=1, apoB=1, interp="cubic"):
-def mla1_our(iqraw, tx_origins, element_positions, tx_directions):
+def mla1_our(iqraw, tx_origins, element_positions, tx_directions,fd, t0,fs, c):
+    """
+    Operator-based MLA1 beamforming that computes the output directly without
+    materializing the big matrix. This uses JAX primitives and `vmap` so it
+    can be JITted and keeps memory low. Uses complex64 to reduce footprint.
+    """
+    iqraw = jnp.asarray(iqraw).astype(jnp.complex64)
+    element_positions = jnp.asarray(element_positions)[:, [0, 2]]
+    tx_origins = jnp.asarray(tx_origins)
+    tx_directions = jnp.asarray(tx_directions)
+
     ns, nc, nl = iqraw.shape
-    l_vals = np.arange(nl)
-    element_positions = element_positions[:, [0, 2]]
-    pixel_grid = np.array(
-        [
-            tx_origins[line_num, [0, 2]] + (l_vals * STEPSIZE)[..., None] * tx_directions[line_num, [0, 2]]
-            for line_num in range(ns)
-        ]
-            )  # (nc, nl, 2)
-    M = mla1_mtx(pixel_grid, element_positions)
-    IQbf = (M @ iqraw.reshape(ns * nl * nc)).reshape(ns, nl)  # (ns * nl) = (ns * nl, ns * nc*nl) @ (ns * nc * nl)
+    l_vals = jnp.arange(nl)
+    d_transmit = l_vals * STEPSIZE  # (nl,)
+    wc = 2 * jnp.pi * fd
+
+    def process_line(iq_line, tx_origin, tx_dir):
+        # iq_line: (nc, nl)
+        # build pixel positions for this line: (nl, 2)
+        # Avoid list-style multidimensional indexing on JAX arrays
+        txo = jnp.array([tx_origin[0], tx_origin[2]])
+        txd = jnp.array([tx_dir[0], tx_dir[2]])
+        pixel_pos = txo + (l_vals * STEPSIZE)[:, None] * txd
+
+        # distances (nl, nc)
+        d_receive = jnp.linalg.norm(pixel_pos[:, None, :] - element_positions[None, :, :], axis=-1)
+        # tau and fractional sample indices (nl, nc)
+        tau = (d_receive + d_transmit[:, None]) / c
+        idxt = tau * fs - t0
+
+        # prepare for gather: transpose iq_line to (nl, nc) so axis 0 is sample index
+        iq_line_samples = iq_line.T  # (nl, nc)
+
+        idxf = jnp.floor(idxt).astype(int)
+        frac = idxt - idxf
+
+        # clip indices for safe gathering then mask invalid entries
+        idxf_clipped = jnp.clip(idxf, 0, nl - 1)
+        idxf1_clipped = jnp.clip(idxf + 1, 0, nl - 1)
+
+        s0 = jnp.take_along_axis(iq_line_samples, idxf_clipped, axis=0)
+        s1 = jnp.take_along_axis(iq_line_samples, idxf1_clipped, axis=0)
+
+        phase = jnp.exp(1j * wc * tau).astype(jnp.complex64)
+        contrib = ((1.0 - frac) * s0 + frac * s1) * phase
+
+        valid = (idxt >= 0) & (idxt <= (nl - 2))
+        contrib = contrib * valid.astype(jnp.complex64)
+
+        # sum over receive elements -> per-pixel value (nl,)
+        out_line = jnp.sum(contrib, axis=1)
+        return out_line
+
+    IQbf = vmap(process_line, in_axes=(0, 0, 0))(iqraw, tx_origins, tx_directions)
     return IQbf
 
 @partial(jit, static_argnums=(3, 4))

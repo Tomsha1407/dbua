@@ -131,13 +131,13 @@ def create_bmode_mla1(exp_name, ntx = None, nrx=None, nt = None):
     dx = xc[1] - xc[0]
     dy = y[1] - y[0]
     ext = [xc[0] - dx / 2, xc[-1] + dx / 2, y[-1] + dy / 2, y[0] - dy / 2]
-    # im = ax.imshow(bimg, vmin=-45, vmax=+5, extent=ext, cmap="bone",
-    #                       interpolation="bicubic")
-    im = ax.imshow(bimg, extent=ext, cmap="bone",
+    im = ax.imshow(bimg, vmin=-45, vmax=+5, extent=ext, cmap="bone",
                           interpolation="bicubic")
+    # im = ax.imshow(bimg, extent=ext, cmap="bone",
+                        #   interpolation="bicubic")
     # plt.colorbar()
     plt.title("Beamformed Log-Abs Image")
-    fig.savefig(f"mla/mla_woMinMax{exp_name}_ntx{ntx}_nrx{nrx}_nt{nt}.png", dpi=fig.get_dpi())
+    fig.savefig(f"mla/mla_{exp_name}_ntx{ntx}_nrx{nrx}_nt{nt}.png", dpi=fig.get_dpi())
 
     # fig, ax = plt.subplots(figsize=figsize)
     # im = ax.imshow(log_abs_bf, cmap='gray', aspect='auto')
@@ -148,4 +148,4 @@ def create_bmode_mla1(exp_name, ntx = None, nrx=None, nt = None):
 
 if __name__ == "__main__":
     exp_name = '0003490e_20250611'
-    create_bmode_mla1(exp_name, ntx=100, nrx=100, nt=800)
+    create_bmode_mla1(exp_name, ntx=200, nrx=200, nt=800)

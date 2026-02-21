@@ -32,10 +32,10 @@ BMODE_Z_MAX = 40e-3
 # Sound speed grid in m
 # SOUND_SPEED_X_MIN = -12e-3
 # SOUND_SPEED_X_MAX = 12e-3
-# SOUND_SPEED_Z_MIN = 0e-3
+# SOUND_SPEED_Z_MIN = 0e-3d
 # SOUND_SPEED_Z_MAX = 40e-3
-SOUND_SPEED_NXC = 19
-SOUND_SPEED_NZC = 31
+SOUND_SPEED_NXC = 800 #800#19
+SOUND_SPEED_NZC = 200 #200#31
 
 # Phase estimate kernel size in samples
 NXK, NZK = 5, 5
@@ -120,7 +120,7 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None):
         tx_origin = np.array(f["tx_setup/[0]/origin"]).T  # Shape: (3, 204) - effective TX sources
         elemnt_position = np.array(f["probe/element_positions"]).T  # Shape: (3, 238) - RX elements
         rx_origin = np.array(f["rx_geometry/[0]/origin"]).T #(3, 816)
-        tx_direction = np.array(f["tx_setup/[0]/direction"]) #(203,3)   
+        tx_direction = np.array(f["tx_setup/[0]/direction"]) #(204,3)   
         print("here")
         
         data = {}
@@ -154,6 +154,7 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None):
         keep_tx = (iqdata.shape[1] - ntx) //2    
         iqdata = iqdata[:,keep_tx:keep_tx+ntx, :]
         tx_origin = tx_origin[:,keep_tx:keep_tx+ntx]
+        tx_direction = tx_direction[keep_tx:keep_tx+ntx,:]
     if nrx != None:
         keep_rx = (iqdata.shape[0] - nrx) //2    
         iqdata = iqdata[keep_rx:keep_rx+nrx,:, :]
@@ -234,10 +235,10 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None):
          xp, zp,  r_xe, r_ze, xc, zc, c, fnum=0.5, npts=64)
 
     def makeImage(c):
-        t_tx = tof_image_tx(c)
-        t_rx = tof_image_rx(c)
+        # t_tx = tof_image_tx(c)
+        # t_rx = tof_image_rx(c)
         # return jnp.abs(das(iqdata, t_rx, t_tx - t0, fs, fd)) #rx first
-        return jnp.abs(mla1_our(iqdata.transpose(1,0,2), tx_origin.T, elemnt_position.T, tx_direction)) #tx first 
+        return jnp.abs(mla1_our(iqdata.transpose(1,0,2), tx_origin.T, elemnt_position.T, tx_direction, fd, t0,fs, c)) #tx first 
 
     def loss_wrapper(func, c):
         t_tx = tof_patch_tx(c)
@@ -307,7 +308,7 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None):
         bimg = bimg + 1e-10 * (bimg == 0)  # Avoid nans
         bimg = 20 * np.log10(bimg)
         bimg = np.reshape(bimg, (nxi, nzi)).T
-        cimg = np.reshape(cimg, (SOUND_SPEED_NXC, SOUND_SPEED_NZC)).T
+        cimg = np.reshape(cimg, (SOUND_SPEED_NXC, SOUND_SPEED_NZC))
 
         if handles is None:
             # On the first call, report the fps of jax
@@ -376,5 +377,5 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None):
 
 if __name__ == "__main__":
     exp_name = '0003490e_20250611'
-    main(exp_name='0003490e_20250611', loss_name='pe', ntx=200, nrx=100, nt=800, name="tx200_rx100_nt800_mla1") ## 8 < min(ntx,nrx)//2
+    main(exp_name='0003490e_20250611', loss_name='pe', ntx=200, nrx=200, nt=800, name="tx200_rx200_nt800_mla1_TEST") ## 8 < min(ntx,nrx)//2
 
