@@ -74,6 +74,7 @@ def channel_to_element(channel_data: np.ndarray, ch2el: np.ndarray) -> np.ndarra
     
     #original
     # element_data[s_valid, :, shot_valid, new_el_idx, :] = channel_data[s_valid, :, shot_valid, el_valid, :]
+    # element_data[s_valid, :, shot_valid, new_el_idx] = channel_data[s_valid, :, shot_valid, el_valid]
     element_data[:, shot_valid, new_el_idx, :] = channel_data[:, shot_valid, el_valid, :] # i took only 1 stream out of 6.
     #prev
     # element_data[s_valid, shot_valid, new_el_idx, :] = channel_data[s_valid, shot_valid, el_valid, :]
@@ -107,28 +108,28 @@ def load_dataset(sample):
 
 import h5py
 import os
-def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None, folder=None):
+def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None, folder=None,frame=0):
     if folder is not None:
-        os.makedirs(f"mla_changesSOS/{folder}", exist_ok=True)
-        os.makedirs(f"videos/mla_changesSOS/{folder}", exist_ok=True)
+        os.makedirs(f"Results/{folder}", exist_ok=True)
+        os.makedirs(f"Results/videos/{folder}", exist_ok=True)
     # Get IQ data, time zeros, sampling and demodulation frequency, and element positions
 
     # path_data = os.path.join( DATA_DIR, exp_name )
     path_data = (f"{DATA_DIR}/{exp_name}.ush5")
     with h5py.File(path_data, 'r') as f:
         print("Root keys:", list(f.keys()))
-        fs = float(f["afe/[0]/sampling_rate_IQ"][0])
-        fd = float(f["afe/[0]/demod_frequency"]['f_demod'][0,0])
-        t0 = (np.array(f['channel_data']['[0]']['first_patient_sample'])[0]/fs) 
-        tx_origin = np.array(f["tx_setup/[0]/origin"]).T  # Shape: (3, 204) - effective TX sources
+        fs = float(f["afe"][f"[{frame}]"]["sampling_rate_IQ"][0])
+        fd = float(f["afe"][f"[{frame}]"]["demod_frequency"]['f_demod'][0,0])
+        t0 = (np.array(f['channel_data'][f"[{frame}]"]['first_patient_sample'])[0]/fs) 
+        tx_origin = np.array(f["tx_setup"][f"[{frame}]"]["origin"]).T  # Shape: (3, 204) - effective TX sources
         elemnt_position = np.array(f["probe/element_positions"]).T  # Shape: (3, 238) - RX elements
-        rx_origin = np.array(f["rx_geometry/[0]/origin"]).T #(3, 816)
-        tx_direction = np.array(f["tx_setup/[0]/direction"]) #(204,3)   
+        rx_origin = np.array(f["rx_geometry"][f"[{frame}]"]["origin"]).T #(3, 816)
+        tx_direction = np.array(f["tx_setup"][f"[{frame}]"]["direction"]) #(204,3)   
         print("here")
         
         data = {}
         channel_data_list = []
-        num_streams = 1 #6
+        num_streams =6
         for i in range(num_streams):
             try:
                 tmp_ch_data = f["hidden_data"]["channel_data"][f"[{i}]"]["channel_data_int16"]
@@ -146,7 +147,7 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None, folder
     # change iqdata to elment_data. i.e arrange the cd correctly 
 
     element_data_from_CD = channel_to_element(channel_data=data["channel_data"], ch2el=data["channel_element_mapping"])
-    iqdata_full = element_data_from_CD[0] #(204,238,1104) =(tx,rx,nt)
+    iqdata_full = element_data_from_CD[frame] #(204,238,1104) =(tx,rx,nt)
     iqdata_full = iqdata_full.transpose(1,0,2) #(rx,tx,nt)
     # Remove rx padding symmetrically from center:
     num_elemnts = elemnt_position.shape[1]
@@ -292,7 +293,7 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None, folder
     fig = plt.figure(figsize=(8, 6))
     fig.set_dpi(144)
     vobj = FFMpegWriter(fps=30)
-    vobj.setup(fig, "videos/mla_changesSOS/%s/%s_opt%s.mp4" % (folder,exp_name+name, loss_name), dpi=144)
+    vobj.setup(fig, "Results/videos/%s/%s_opt%s.mp4" % (folder,exp_name+name, loss_name), dpi=144)
 
     # Create the image axes for plotting
     ximm = xi[:, 0] * 1e3
@@ -369,7 +370,7 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None, folder
             else:
                 hct.set_text("Iteration %d: Mean value %.2f" %
                              (i, np.mean(cimg)))
-        fig.savefig(f"mla_changesSOS/{folder}/{exp_name+name}.png", dpi=fig.get_dpi())
+        fig.savefig(f"Results/{folder}/{exp_name+name}.png", dpi=fig.get_dpi())
 
     # Initialize figure
     handles = makeFigure(c, 0)
@@ -386,5 +387,7 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None, folder
 
 if __name__ == "__main__":
     exp_name = '0003490e_20250611'
-    main(exp_name='0003490e_20250611', loss_name='sb', ntx=200, nrx=200, nt=800, folder="27_2",name="tx200_rx200_nt800_NOTfixed_sb_1e9") ## 8 < min(ntx,nrx)//2
+    for i in range(6):
+        print(f"Running frame {i}...")
+        main(exp_name=exp_name, loss_name='sb', ntx=200, nrx=200, nt=800, folder="27_2",name=f"tx200_rx200_nt800_sb_1e9_frame{i}", frame=i) ## 8 < min(ntx,nrx)//2
 
