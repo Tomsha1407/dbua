@@ -37,6 +37,7 @@ def coherence_factor(iq, t_tx, t_rx, fs, fd):
 
 
 @partial(jit, static_argnums=(2,3,4,5,6,7))
+# @partial(jit, static_argnums=(3,4))
 # def speckle_brightness(iq, t_tx, t_rx, fs, fd):
 def speckle_brightness(c,iq, tx_origin, elemnt_position,tx_direction, t0, fs, fd):
     """

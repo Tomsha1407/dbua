@@ -1,4 +1,5 @@
 from pathlib import Path
+import jax
 import numpy as np
 import jax.numpy as jnp
 from jax import jit
@@ -106,8 +107,10 @@ def load_dataset(sample):
 
 import h5py
 import os
-def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None):
-    
+def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None, folder=None):
+    if folder is not None:
+        os.makedirs(f"mla_changesSOS/{folder}", exist_ok=True)
+        os.makedirs(f"videos/mla_changesSOS/{folder}", exist_ok=True)
     # Get IQ data, time zeros, sampling and demodulation frequency, and element positions
 
     # path_data = os.path.join( DATA_DIR, exp_name )
@@ -265,13 +268,17 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None):
 
     def loss(c):
         if loss_name == "sb":  # Speckle brightness
-            return sb_loss(c) + tv(c) * 1e2
+            try_Tv = tv(c)
+            # jax.debug.print("tv = {v}", v=try_Tv)       # prints during execution
+            return sb_loss(c) + try_Tv * 1e9 #1e2
         elif loss_name == "lc":  # Lag one coherence
             return lc_loss(c) + tv(c) * 1e2
         elif loss_name == "cf":  # Coherence factor
             return cf_loss(c) + tv(c) * 1e2
         elif loss_name == "pe":  # Phase error
-            return pe_loss(c) + tv(c) * 1e2
+            try_Tv = tv(c)
+            # jax.debug.print("tv = {v}", v=try_Tv)       # prints during execution
+            return pe_loss(c) + tv(c) * 1e6
         else:
             NotImplementedError
 
@@ -285,7 +292,7 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None):
     fig = plt.figure(figsize=(8, 6))
     fig.set_dpi(144)
     vobj = FFMpegWriter(fps=30)
-    vobj.setup(fig, "videos/mla_changesSOS/%s_opt%s.mp4" % (exp_name+name, loss_name), dpi=144)
+    vobj.setup(fig, "videos/mla_changesSOS/%s/%s_opt%s.mp4" % (folder,exp_name+name, loss_name), dpi=144)
 
     # Create the image axes for plotting
     ximm = xi[:, 0] * 1e3
@@ -362,7 +369,7 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None):
             else:
                 hct.set_text("Iteration %d: Mean value %.2f" %
                              (i, np.mean(cimg)))
-        fig.savefig(f"mla_changesSOS/{exp_name+name}.png", dpi=fig.get_dpi())
+        fig.savefig(f"mla_changesSOS/{folder}/{exp_name+name}.png", dpi=fig.get_dpi())
 
     # Initialize figure
     handles = makeFigure(c, 0)
@@ -379,5 +386,5 @@ def main(exp_name, loss_name, ntx = None, nrx=None, nt = None, name=None):
 
 if __name__ == "__main__":
     exp_name = '0003490e_20250611'
-    main(exp_name='0003490e_20250611', loss_name='sb', ntx=200, nrx=200, nt=800, name="tx200_rx200_nt800_NOTfixed_sb") ## 8 < min(ntx,nrx)//2
+    main(exp_name='0003490e_20250611', loss_name='sb', ntx=200, nrx=200, nt=800, folder="27_2",name="tx200_rx200_nt800_NOTfixed_sb_1e9") ## 8 < min(ntx,nrx)//2
 
